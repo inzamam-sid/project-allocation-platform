@@ -82,6 +82,10 @@ export interface Team {
   leader?: { id: string; firstName: string; lastName: string };
   invites?: TeamInvite[];
   _count?: { members: number };
+  allMembersInPool?: {
+  studentId: string;
+  teamId: string;
+}[];
 }
 
 export interface TeamMember {

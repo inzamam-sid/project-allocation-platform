@@ -95,10 +95,43 @@ export class TeamsService {
       const maxSize = pool?.defaultMaxTeamSize || TEAM_DEFAULTS.MAX_SIZE;
       if (invite.team.members.length >= maxSize) throw new BadRequestError('Team is full');
 
-      await prisma.$transaction([
-        prisma.teamInvite.update({ where: { id: inviteId }, data: { status: 'ACCEPTED', respondedAt: new Date() } }),
-        prisma.teamMember.create({ data: { teamId: invite.teamId, studentId, role: 'MEMBER', status: 'ACTIVE' } }),
-      ]);
+      // await prisma.$transaction([
+      //   prisma.teamInvite.update({ where: { id: inviteId }, data: { status: 'ACCEPTED', respondedAt: new Date() } }),
+      //   prisma.teamMember.create({ data: { teamId: invite.teamId, studentId, role: 'MEMBER', status: 'ACTIVE' } }),
+      // ]);
+      await prisma.$transaction(async (tx) => {
+        await tx.teamInvite.update({
+          where: { id: inviteId },
+          data: { status: 'ACCEPTED', respondedAt: new Date() }
+        });
+
+        // 🔥 FIX: check if record already exists
+        const existingMember = await tx.teamMember.findUnique({
+          where: {
+            teamId_studentId: {
+              teamId: invite.teamId,
+              studentId
+            }
+          }
+        });
+
+        if (existingMember) {
+          // 🔥 just update instead of creating
+          await tx.teamMember.update({
+            where: { id: existingMember.id },
+            data: { status: 'ACTIVE', role: 'MEMBER' }
+          });
+        } else {
+          await tx.teamMember.create({
+            data: {
+              teamId: invite.teamId,
+              studentId,
+              role: 'MEMBER',
+              status: 'ACTIVE'
+            }
+          });
+        }
+      });
 
       // Check if team is now complete
       const newCount = invite.team.members.length + 1;
@@ -221,20 +254,64 @@ export class TeamsService {
     });
   }
 
-  async getMyTeam(poolId: string, studentId: string) {
-    const membership = await this.getActiveTeamForStudent(poolId, studentId);
-    if (!membership) return null;
+  // async getMyTeam(poolId: string, studentId: string) {
+  //   const membership = await this.getActiveTeamForStudent(poolId, studentId);
+  //   if (!membership) return null;
 
-    return prisma.team.findUnique({
-      where: { id: membership.teamId },
-      include: {
-        project: { select: { id: true, title: true, description: true, domain: true, prerequisites: true } },
-        members: { where: { status: 'ACTIVE' }, include: { student: { select: { id: true, firstName: true, lastName: true, email: true, enrollmentNo: true } } } },
-        invites: { where: { status: 'PENDING' }, include: { invitee: { select: { id: true, firstName: true, lastName: true } } } },
-        leader: { select: { id: true, firstName: true, lastName: true } },
+  //   return prisma.team.findUnique({
+  //     where: { id: membership.teamId },
+  //     include: {
+  //       project: { select: { id: true, title: true, description: true, domain: true, prerequisites: true } },
+  //       members: { where: { status: 'ACTIVE' }, include: { student: { select: { id: true, firstName: true, lastName: true, email: true, enrollmentNo: true } } } },
+  //       invites: { where: { status: 'PENDING' }, include: { invitee: { select: { id: true, firstName: true, lastName: true } } } },
+  //       leader: { select: { id: true, firstName: true, lastName: true } },
+  //     },
+  //   });
+  // }
+
+  async getMyTeam(poolId: string, studentId: string) {
+  const membership = await this.getActiveTeamForStudent(poolId, studentId);
+  if (!membership) return null;
+
+  // 🔴 ADD THIS
+  const allMembersInPool = await prisma.teamMember.findMany({
+    where: {
+      team: { poolId },
+      status: 'ACTIVE'
+    },
+    select: {
+      studentId: true,
+      teamId: true
+    }
+  });
+
+  const team = await prisma.team.findUnique({
+    where: { id: membership.teamId },
+    include: {
+      project: { select: { id: true, title: true, description: true, domain: true, prerequisites: true } },
+      members: {
+        where: { status: 'ACTIVE' },
+        include: {
+          student: { select: { id: true, firstName: true, lastName: true, email: true, enrollmentNo: true } }
+        }
       },
-    });
-  }
+      invites: {
+        where: { status: 'PENDING' },
+        include: {
+          invitee: { select: { id: true, firstName: true, lastName: true } }
+        }
+      },
+      leader: { select: { id: true, firstName: true, lastName: true } },
+    },
+  });
+
+  // 🔴 ATTACH THIS EXTRA DATA
+  if (!team) return null;
+  return {
+    ...team,
+    allMembersInPool // 👈 important
+  };
+}
 
   async getMyInvites(poolId: string, studentId: string) {
     return prisma.teamInvite.findMany({

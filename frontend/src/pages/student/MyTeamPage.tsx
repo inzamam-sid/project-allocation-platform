@@ -76,6 +76,9 @@ const MyTeamPage: React.FC = () => {
   if (loading) return <LoadingSpinner />;
 
   const isLeader = team?.leaderId === user?.id;
+  const inviteIds = new Set(team?.invites?.map(i => i.inviteeId));
+  const memberIds = new Set(team?.members?.map(m => m.studentId));
+  const takenMap = new Map(team?.allMembersInPool?.map((m: any) => [m.studentId, m.teamId]));
 
   return (
     <div className="space-y-6">
@@ -158,7 +161,7 @@ const MyTeamPage: React.FC = () => {
             <h3 className="text-lg font-semibold mb-4">Invite Student</h3>
             <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="Search by name or enrollment"
               className="w-full px-3 py-2 border rounded-lg text-sm mb-3 outline-none focus:ring-2 focus:ring-blue-500" />
-            <div className="space-y-2 max-h-60 overflow-y-auto">
+            {/* <div className="space-y-2 max-h-60 overflow-y-auto">
               {students.filter(s =>
                 (!inviteEmail || s.firstName.toLowerCase().includes(inviteEmail.toLowerCase()) || s.enrollmentNo?.includes(inviteEmail)) &&
                 s.id !== user?.id &&
@@ -169,6 +172,59 @@ const MyTeamPage: React.FC = () => {
                   <button onClick={() => sendInvite(s.id)} className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">Invite</button>
                 </div>
               ))}
+
+            </div> */}
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {students
+                .filter(s =>
+                  (!inviteEmail || s.firstName.toLowerCase().includes(inviteEmail.toLowerCase()) || s.enrollmentNo?.includes(inviteEmail)) &&
+                  s.id !== user?.id
+                )
+                .map(s => {
+
+                  let status = 'AVAILABLE';
+
+                  if (memberIds.has(s.id)) {
+                    status = 'ACCEPTED';
+                  } else if (inviteIds.has(s.id)) {
+                    status = 'INVITED';
+                  } else if (takenMap.has(s.id) && takenMap.get(s.id) !== team?.id) {
+                    status = 'TAKEN';
+                  }
+
+                  return (
+                    <div key={s.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
+                      <div>
+                        <p className="text-sm font-medium">{s.firstName} {s.lastName}</p>
+                        <p className="text-xs text-gray-500">{s.enrollmentNo}</p>
+                      </div>
+
+                      {status === 'AVAILABLE' && (
+                        <button onClick={() => sendInvite(s.id)} className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
+                          Invite
+                        </button>
+                      )}
+
+                      {status === 'INVITED' && (
+                        <button disabled className="px-3 py-1 bg-yellow-500 text-white text-xs rounded">
+                          Pending
+                        </button>
+                      )}
+
+                      {status === 'ACCEPTED' && (
+                        <button disabled className="px-3 py-1 bg-green-600 text-white text-xs rounded">
+                          Accepted
+                        </button>
+                      )}
+
+                      {status === 'TAKEN' && (
+                        <button disabled className="px-3 py-1 bg-gray-400 text-white text-xs rounded">
+                          Taken
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
             </div>
             <button onClick={() => setShowInvite(false)} className="w-full mt-4 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200">Close</button>
           </div>
